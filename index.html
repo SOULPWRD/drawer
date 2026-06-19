@@ -14,7 +14,6 @@
 	  overflow: hidden;
 	  padding: 10px;
 	  padding-top: 30px;
-	  touch-action: none;
 	  box-sizing: border-box;
       }
       
@@ -23,7 +22,7 @@
 	  overflow-y: auto;
 	  touch-action: pan-y;
 	  -webkit-overflow-scrolling: touch;
-	  overscroll-behavior: none;
+	  overscroll-behavior: contain;
 	  height: calc(100% - 44px);
           overflow-y: auto;
           padding: 10px;
@@ -32,7 +31,6 @@
 
       #articles.sheet-is-dragging {
           overflow: hidden;
-	  touch-action: none;
       }
       
       .article {
@@ -91,23 +89,15 @@
       const root_props = root.getBoundingClientRect();
       const scroller = document.querySelector("#articles");
 
-      const default_height = root_props.height;
       const max_height = 300;
       const min_height = 50;
-      const drag_distance = Math.max(1, max_height - min_height);
 
-      let is_dragging = false;
-      let pointer_id;
-      let progress = 1;
-      let is_pointerdown;
       let start_y;
       let mode = "idle";
       let startedInsideScroller = false;
-
-      function isScrollerAtTop() {
-	  return scroller.scrollTop <= 0;
-      }
-
+      let current_height = max_height;
+      let start_height = max_height;
+      
       function startsInsideScroller(target) {
 	  return scroller.contains(target);
       }
@@ -116,100 +106,81 @@
 	  return Math.max(min, Math.min(max, value));
       }
 
-      function calculate_progress(delta_y) {
-	  return clamp(0, 1, (delta_y / drag_distance) + progress);
+      function isSheetMode(direction) {
+	  if (direction === "up" && current_height < max_height) {
+	      return true;
+	  }
+
+	  if (direction === "down" && scroller.scrollTop <= 0 && current_height > min_height) {
+	      return true;
+	  }
+
+	  return false;
       }
 
-      function calculate_height(delta_y) {
-	  const progress = calculate_progress(delta_y);
-	  const height = (
-	      (max_height - min_height) * progress
-	  ) + min_height;
-
-	  return height;
-      }
-
-      function set_progress(height) {
-	  root.style.setProperty("--widget-height", `${height}px`);
+      function set_height(height) {
+	  current_height = clamp(min_height, max_height, height);
+	  root.style.setProperty("--widget-height", `${current_height}px`);
       }
 
       function cancel(e) {
-	  if (e.pointerId !== pointer_id) {
-	      return;
-	  }
-	  is_dragging = false;
-	  pointer_id = undefined;
 	  startedInsideScroller = false;
 	  scroller.classList.remove("sheet-is-dragging");
 	  mode = "idle";
-	  root?.releasePointerCapture(e.pointerId);
-	  const delta_y = start_y - e.clientY;
-	  progress = calculate_progress(delta_y);
       }
 
 
-      root.addEventListener("pointerdown", function (e) {
-	  e.preventDefault();
-	  pointer_id = e.pointerId;
-	  is_dragging = false;
-	  start_y = e.clientY;
-	  mode = "idle";
-	  startedInsideScroller = startsInsideScroller(e.target);
-      });
-
-      root.addEventListener("pointermove", function (e) {
-	  if (e.pointerId !== pointer_id) {
+      root.addEventListener("touchstart", function (e) {
+	  if (e.touches.length !== 1) {
 	      return;
 	  }
 
-	  if (!is_dragging) {
-	      is_dragging = true;
-	      root?.setPointerCapture(e.pointerId);
+	  const touch = e.touches[0];
+	  start_y = touch.clientY;
+	  start_height = current_height;
+	  startedInsideScroller = startsInsideScroller(e.target);
+      });
+
+      root.addEventListener("touchmove", function (e) {
+	  if (e.touches.length !== 1) {
+	      return;
 	  }
 
-	  console.log({mode});
+	  const [touch] = e.touches;
 
-	  const delta_y = start_y - e.clientY;
+	  
+	  const delta_y = start_y - touch.clientY;
 	  const direction = delta_y < 0 ? "down" : "up";
 
 	  if (mode === "idle") {
 	      
-	      if (!startedInsideScroller) {
+	      if (isSheetMode(direction) || !startedInsideScroller) {
 		  mode = "sheet";
 		  scroller.classList.add("sheet-is-dragging");
-		  return;
+	      } else {
+		  mode = "scroll";
+		  scroller.classList.remove("sheet-is-dragging");
 	      }
 
-	      console.log({direction, isAtTop: isScrollerAtTop()});
-
-	      if (direction === "down" && isScrollerAtTop()) {
-		  console.log({a: "asdf"});
-		  mode = "sheet";
-		  return;
-	      }
-
-	      mode = "scroll";
-	      return;
 	  }
 
 	  if (mode === "scroll") {
 	      // do nothing
 	      // keep the default behavior
-	      scroller.classList.remove("sheet-is-dragging");
 	      return;
 	  }
+	  // default sheet mode
 	  // prevent default is very important here
 	  // it prevents from scrolling
 	  e.preventDefault();
-	  console.log("hello from prevented");
-	  scroller.classList.add("sheet-is-dragging");
-	  const height = calculate_height(delta_y);
-	  set_progress(height);
-      }, {passive: false});
+	  set_height(start_height + delta_y);
+      }, {
+	  passive: false
+      });
 
-      root.addEventListener("pointerup", cancel);
-      root.addEventListener("pointercancel", cancel);
-      set_progress(max_height);
+      root.addEventListener("touchend", cancel);
+      root.addEventListener("touchcancel", cancel);
+      set_height(max_height);
 
     </script>
   </body>
